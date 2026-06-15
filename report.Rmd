@@ -1,0 +1,179 @@
+---
+title: "Relatório Estatístico e Epidemiológico Profissional"
+subtitle: "Gerado Automaticamente via FIP606 Studio"
+date: "`r format(Sys.Date(), '%d de %B de %Y')`"
+toc-title: ""
+output: 
+  word_document:
+    highlight: tango
+  html_document:
+    theme: flatly
+    highlight: tango
+params:
+  plots: NA
+  texts: NA
+  raw_results: NA
+  dataset: NA
+  file_info: NA
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, fig.width = 9, fig.height = 6, dpi = 300)
+library(ggplot2)
+library(knitr)
+```
+
+# 1. Introdução ao Projeto
+
+Este documento constitui o **Apêndice Estatístico Profissional** compilado a partir da sessão de análise de dados no aplicativo FIP606. Ele foi desenhado estruturalmente para compor o escopo de materiais suplementares em dissertações, teses ou publicações de alto impacto científico.
+
+Aqui estão consolidados os gráficos em alta resolução, resumos tabulares, quadros de ANOVA, saídas de modelos lineares e as estatísticas de comparação múltipla, garantindo **total transparência metodológica**.
+
+---
+
+# 2. Resumo e Proveniência dos Dados
+
+Antes da execução dos modelos, o banco de dados principal fornecido à plataforma foi pré-processado. 
+
+**Origem do Arquivo Analisado:** `r if(is.null(params$file_info)) "Não Informado" else params$file_info`
+
+Abaixo, apresentamos a dimensão da matriz e uma amostra estrutural das primeiras observações para fins de auditoria e validação de tipagens (Fatores x Numéricos).
+
+```{r data-summary, results='asis'}
+if (!is.null(params$dataset) && is.data.frame(params$dataset)) {
+  cat(paste0("- **Número Total de Observações (Linhas):** ", nrow(params$dataset), "\n"))
+  cat(paste0("- **Número Total de Variáveis (Colunas):** ", ncol(params$dataset), "\n\n"))
+  
+  cat("### Amostra do Banco de Dados (Head)\n\n")
+  print(kable(head(params$dataset, n = 10), format = "markdown"))
+} else {
+  cat("*O conjunto de dados ativo não foi exportado ou não está disponível.*")
+}
+```
+
+---
+
+# 3. Metodologia Estatística e Software
+
+A transparência de software é fundamental para publicações científicas. A reprodução das análises e elaboração dos gráficos expostos neste relatório baseiam-se na seguinte pilha tecnológica:
+
+* **Ambiente de Programação:** Toda a modelagem foi conduzida através do software estatístico livre R (R Core Team, 2024).
+* **Gramática de Gráficos:** A renderização das figuras padronizadas foi obtida pela gramática em camadas `ggplot2`.
+* **Modelos Lineares:** As Análises de Variância e Modelos Lineares Generalizados apoiaram-se nas bibliotecas nativas `stats`.
+* **Comparações Múltiplas:** As extrações de médias marginais estimadas, contrastes post-hoc e a definição das letras de agrupamento (Tukey, LSD, etc.) foram garantidas pelos pacotes `emmeans` e `multcomp`.
+* **Epidemiologia Plantar:** O cálculo da Área Abaixo da Curva de Progresso da Doença (AUDPC) e o ajuste de modelos de linearização epidemiológica (Monomolecular, Logístico e Gompertz) baseiam-se nos conceitos encapsulados pelo pacote `epifitter`.
+
+> **Nota para o Autor:** Os textos sugeridos em blocos de "Citação" nas seções seguintes podem e devem ser mesclados à sua seção de "Material e Métodos" e "Resultados".
+
+---
+
+```{r results='asis'}
+print_section <- function(title, key, teorico) {
+  has_plot <- !is.null(params$plots[[key]])
+  has_text <- !is.null(params$texts[[key]])
+  has_res  <- !is.null(params$raw_results[[key]])
+  
+  if (has_plot || has_text || has_res) {
+    cat(paste0("\n\n# ", title, "\n\n"))
+    
+    # Guia Teórico Didático
+    cat("### Fundamentação Teórica\n")
+    cat(teorico, "\n\n")
+    
+    if (has_plot) {
+      cat("### Visualização Gráfica\n\n")
+      print(params$plots[[key]])
+      cat("\n\n")
+    }
+    
+    if (has_res) {
+      cat("### Resultados Estatísticos Brutos\n\n")
+      cat("Abaixo encontram-se os quadros da ANOVA, resumos de modelo e comparações múltiplas extraídas diretamente do console de processamento do R:\n\n")
+      cat("```text\n")
+      res_out <- paste(params$raw_results[[key]], collapse = "\n")
+      cat(res_out)
+      cat("\n```\n\n")
+    }
+    
+    if (has_text) {
+      cat("### Texto Sugerido para Publicação\n\n")
+      cat("O texto a seguir foi pré-formatado para sua conveniência e já engloba as direções das médias e níveis de significância adequados:\n\n")
+      cat("> ", gsub("\n", "\n> ", params$texts[[key]]), "\n\n")
+    }
+    
+    cat("---\n\n")
+  }
+}
+
+txt_ttest <- "O Teste t de Student (ou o teste não-paramétrico de Wilcoxon, dependendo das premissas) é aplicado para inferir se há diferença estatisticamente significativa entre exatamente duas médias de tratamento independentes."
+txt_anova <- "A Análise de Variância (ANOVA) permite comparar se pelo menos uma das médias difere num experimento envolvendo mais de dois grupos. A aplicação do agrupamento post-hoc de Tukey minimiza o Erro Tipo I em comparações pareadas, sendo a ferramenta de ouro em experimentos agronômicos."
+txt_glm   <- "Modelos Lineares Generalizados (GLMs) baseados em distribuições de Poisson ou Binomial Negativa são indicados na modelagem de respostas em formato de 'contagem' (número de lesões, insetos, propágulos), que rompem os pressupostos de normalidade da ANOVA clássica."
+txt_reg   <- "A Regressão Linear determina a natureza matemática da resposta de uma variável contínua em função de um gradiente (como dosagens crescentes de um produto ou diferentes temperaturas). Ela foca em prever o comportamento ao longo do espectro testado."
+
+print_section("Teste T / Wilcoxon", "ttest", txt_ttest)
+print_section("ANOVA (Fatorial/Blocos)", "anova", txt_anova)
+print_section("GLM (Contagens)", "glm", txt_glm)
+print_section("Regressão", "reg", txt_reg)
+
+# Módulo Epidemiológico Especial (AUDPC)
+has_audpc_curve <- !is.null(params$plots$audpc_curve)
+has_audpc_bar   <- !is.null(params$plots$audpc_bar)
+has_epi         <- !is.null(params$plots$epi)
+has_audpc_res   <- !is.null(params$raw_results$audpc)
+has_audpc_txt   <- !is.null(params$texts$audpc)
+
+if (has_audpc_curve || has_audpc_bar || has_epi || has_audpc_res) {
+  cat("\n\n# Progresso da Doença e Epidemiologia (AUDPC)\n\n")
+  
+  cat("### Fundamentação Teórica\n")
+  cat("A Área Abaixo da Curva de Progresso da Doença (AUDPC) fornece um número sintético que sumariza toda a intensidade da epidemia experimentada pelas plantas ao longo de avaliações temporais, sendo a variável mais adotada na Fitopatologia para estimar perdas.\n\nModelos mecanísticos (Monomolecular, Logístico e Gompertz) são usados para calcular as taxas relativas de progresso e entender a dinâmica do ciclo da doença.\n\n")
+  
+  if (has_audpc_curve) {
+    cat("### Curva de Progresso da Doença\n\n")
+    print(params$plots$audpc_curve)
+    cat("\n\n")
+  }
+  
+  if (has_epi) {
+    cat("### Ajuste Epidemiológico (Epifitter)\n\n")
+    print(params$plots$epi)
+    cat("\n\n")
+  }
+  
+  if (has_audpc_bar) {
+    cat("### Análise da AUDPC Média\n\n")
+    print(params$plots$audpc_bar)
+    cat("\n\n")
+  }
+  
+  if (has_audpc_res) {
+    cat("### Resultados Estatísticos da AUDPC\n\n")
+    cat("```text\n")
+    res_out <- paste(params$raw_results$audpc, collapse = "\n")
+    cat(res_out)
+    cat("\n```\n\n")
+  }
+  
+  if (has_audpc_txt) {
+    cat("### Texto Sugerido para Publicação\n\n")
+    cat("> ", gsub("\n", "\n> ", params$texts$audpc), "\n\n")
+  }
+  
+  cat("---\n\n")
+}
+```
+
+# Informações de Reprodutibilidade Computacional
+
+Para assegurar o maior grau de robustez e permitir a replicação exata deste experimento computacional futuramente, listamos abaixo as versões precisas da infraestrutura base (`R Core`) e as versões de todas as bibliotecas carregadas no momento em que as análises e gráficos foram elaborados.
+
+Recomenda-se disponibilizar o `Session Info` no material suplementar do seu artigo caso seja submetido a periódicos da série *Nature*, *Science* ou similares que prezem pela Ciência Aberta (Open Science).
+
+```{r session-info, echo=FALSE, comment=NA}
+sessionInfo()
+```
+
+---
+*Relatório processado via Automação FIP606*  
+*Universidade Federal de Viçosa (UFV)*  
+*Departamento de Fitopatologia*
