@@ -1,0 +1,439 @@
+---
+title: "Aula 2: Importação, Organização e Visualização de Dados"
+format: html
+editor: visual
+editor_options:
+  chunk_output_type: console
+---
+
+# Importação, organização e visualização de dados no R
+
+Este material apresenta um fluxo básico e comentado para:
+
+-   importar dados de diferentes fontes;
+-   reorganizar tabelas do formato largo para o formato longo;
+-   selecionar e filtrar dados;
+-   resumir estatisticamente os valores;
+-   construir gráficos exploratórios e comparativos.
+
+A ideia é que cada etapa da análise fique clara, tanto do ponto de vista conceitual quanto do ponto de vista do código.
+
+## 1. Importar arquivos locais
+
+Nesta primeira etapa, carregamos dados armazenados em diferentes formatos. Em análise de dados, é comum trabalhar com arquivos locais em Excel ou CSV, além de planilhas online.
+
+### 1.1 Ler uma planilha Excel
+
+Arquivos do Excel geralmente possuem uma ou mais abas. A função `read_excel()` permite indicar tanto o arquivo quanto a aba a ser importada.
+
+```{r}
+# Carrega o pacote readxl, usado para ler arquivos .xls e .xlsx
+library(readxl)
+
+# Importa a aba "coffee rust" do arquivo Excel local
+meudado <- read_excel(
+  "dados_diversos.xlsx",
+  sheet = "coffee rust"
+)
+
+# Exibe o objeto importado
+meudado
+```
+
+### 1.2 Ler um arquivo CSV
+
+Arquivos CSV são muito comuns por serem leves, simples e compatíveis com diferentes programas.
+
+```{r}
+# Carrega o tidyverse, que inclui readr, dplyr, ggplot2, tidyr etc.
+library(tidyverse)
+
+# Importa um arquivo CSV local
+meucsv <- read_csv("data/experimento.csv")
+
+# Exibe os dados importados
+meucsv
+```
+
+### 1.3 Ler dados de uma planilha Google
+
+Quando os dados estão na nuvem, podemos importar diretamente a partir de uma URL pública. Aqui foi usado o pacote `gsheet`.
+
+```{r}
+# Carrega o pacote gsheet para importar planilhas públicas do Google Sheets
+library(gsheet)
+
+# Importa uma aba de uma planilha Google
+meudadonuvem <- gsheet2tbl(
+  "https://docs.google.com/spreadsheets/d/1bq2N19DcZdtax2fQW9OHSGMR0X2__Z9T/edit?gid=1110310360#gid=1110310360"
+)
+
+# Visualiza a tabela importada
+meudadonuvem
+
+# Importa outra aba da mesma planilha, contendo dados de curvas
+curve <- gsheet2tbl(
+  "https://docs.google.com/spreadsheets/d/1bq2N19DcZdtax2fQW9OHSGMR0X2__Z9T/edit?gid=1807247585#gid=1807247585"
+)
+
+# Importa outra aba, com dados relacionados a magnésio
+magnesio <- gsheet2tbl(
+  "https://docs.google.com/spreadsheets/d/1bq2N19DcZdtax2fQW9OHSGMR0X2__Z9T/edit?gid=983033137#gid=983033137"
+)
+
+# Exibe os dados importados
+magnesio
+```
+
+## 2. Dados já disponíveis em pacotes ou na web
+
+Nem sempre precisamos começar de arquivos locais. Muitos pacotes já trazem bases internas úteis para ensino, teste e demonstração. Também podemos ler diretamente arquivos hospedados na web.
+
+```{r}
+# Carrega o pacote epifitter
+library(epifitter)
+
+# Acessa um conjunto de dados interno do pacote
+dadopacote <- epifitter::PowderyMildew
+
+# Examina a estrutura do objeto para entender tipos de variáveis e dimensões
+str(dadopacote)
+
+# Lê um arquivo CSV diretamente de um repositório online
+# Esse procedimento é útil quando os dados estão no GitHub ou em outro servidor público
+# O arquivo é importado diretamente pela URL
+ dadogh <- read_csv(
+  "https://raw.githubusercontent.com/emdelponte/paper-coffee-rust-Ethiopia/refs/heads/master/data/survey_clean.csv"
+)
+
+# Visualiza as primeiras linhas
+head(dadogh)
+```
+
+## 3. Transformar dados do formato largo para o formato longo
+
+Muitas análises e gráficos no `ggplot2` funcionam melhor quando os dados estão no chamado **formato longo**.
+
+No formato largo, cada método ou variável medida pode estar em uma coluna diferente. No formato longo, essas colunas são empilhadas em duas colunas principais:
+
+-   uma coluna que identifica o grupo, método ou categoria;
+-   outra coluna que contém os valores observados.
+
+### 3.1 Importar e inspecionar os dados
+
+```{r}
+# Importa a planilha com dados de softwares de avaliação
+software <- gsheet2tbl(
+  "https://docs.google.com/spreadsheets/d/1bq2N19DcZdtax2fQW9OHSGMR0X2__Z9T/edit?gid=373270992#gid=373270992"
+)
+
+# Mostra a estrutura geral dos dados
+# glimpse() é útil para ver nomes de colunas, tipos e alguns valores
+ glimpse(software)
+
+# Cria um objeto com nome mais genérico para facilitar a escrita posterior
+ dados <- software
+```
+
+### 3.2 Converter para formato longo
+
+Neste exemplo, as colunas `Assess`, `LeafDoctor` e `ImageJ` representam medidas obtidas por diferentes softwares. Vamos empilhá-las em uma única coluna de valores.
+
+```{r}
+# Converte os dados do formato largo para o formato longo
+# cols: colunas que serão empilhadas
+# names_to: nome da nova coluna que guardará o nome do software
+# values_to: nome da nova coluna que guardará os valores de severidade
+ dados_longo <- dados |>
+  pivot_longer(
+    cols = c(Assess, LeafDoctor, ImageJ),
+    names_to = "software",
+    values_to = "severidade"
+  )
+
+# Exibe o resultado
+ dados_longo
+```
+
+### 3.3 Visualizar a distribuição dos dados no formato longo
+
+Uma vez no formato longo, fica muito mais simples comparar grupos usando `ggplot2`.
+
+```{r}
+ dados_longo |>
+  ggplot(aes(x = software, y = severidade, color = software)) +
+  geom_boxplot(outlier.colour = NA) +
+  geom_jitter(
+    width = 0.1,
+    alpha = 0.3
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  facet_wrap(~ crop)
+```
+
+Neste gráfico:
+
+-   `geom_boxplot()` resume a distribuição dos dados;
+-   `geom_jitter()` mostra os pontos individuais, evitando sobreposição excessiva;
+-   `facet_wrap(~ crop)` separa os gráficos por cultura.
+
+## 4. Verbos do dplyr: selecionar e filtrar
+
+Agora vamos praticar dois verbos muito importantes do `dplyr`:
+
+-   `select()`: escolhe colunas;
+-   `filter()`: escolhe linhas com base em uma condição.
+
+```{r}
+# Seleciona apenas três colunas do objeto original
+Assess <- software |>
+  select(crop, rep, Assess)
+Assess
+
+# Filtra no objeto longo apenas as observações do software Assess
+Assess2 <- dados_longo |>
+  filter(software == "Assess")
+Assess2
+
+# Filtra apenas observações do ImageJ
+ImageJ <- dados_longo |>
+  filter(software == "ImageJ")
+ImageJ
+
+# Filtra apenas observações do LeafDoctor
+LeafDoctor <- dados_longo |>
+  filter(software == "LeafDoctor")
+LeafDoctor
+```
+
+## 5. Gráficos comparativos por software
+
+Após filtrar os dados por software, podemos construir gráficos separados e depois combiná-los em um painel.
+
+```{r}
+# Gráfico para Assess
+p_A <- Assess2 |>
+  ggplot(aes(x = crop, y = severidade, color = crop)) +
+  geom_jitter(width = 0.1) +
+  labs(title = "Assess")
+
+# Gráfico para LeafDoctor
+p_ld <- LeafDoctor |>
+  ggplot(aes(x = crop, y = severidade, color = crop)) +
+  geom_jitter(width = 0.1) +
+  labs(title = "LeafDoctor")
+
+p_ld
+
+# Gráfico para ImageJ
+p_ij <- ImageJ |>
+  ggplot(aes(x = crop, y = severidade, color = crop)) +
+  geom_jitter(width = 0.1) +
+  labs(title = "ImageJ")
+
+p_ij
+
+# Carrega o patchwork para combinar múltiplos gráficos
+library(patchwork)
+
+# Combina os gráficos em um arranjo de painel
+((p_ld | p_ij) / p_A) +
+  plot_annotation(tag_levels = "A") +
+  plot_layout(guides = "collect") &
+  theme(legend.position = "bottom")
+
+# Salva o gráfico em arquivo PNG
+# bg = "white" evita fundo transparente em alguns casos
+ ggsave("plot1.png", width = 5, height = 5, bg = "white")
+```
+
+## 6. Resumir e agrupar dados
+
+Além de visualizar dados brutos, é importante calcular estatísticas-resumo, como média e desvio-padrão.
+
+### 6.1 Estatísticas gerais
+
+```{r}
+# Média geral da severidade
+mean(dados_longo$severidade)
+
+# Desvio-padrão geral da severidade
+sd(dados_longo$severidade)
+```
+
+### 6.2 Resumo por grupo seguido de gráfico
+
+Aqui agrupamos os dados por `crop` e `software`, calculamos média e desvio-padrão, e depois filtramos apenas o software `Assess`.
+
+```{r}
+plot2 <- dados_longo |>
+  group_by(crop, software) |>
+  summarise(
+    media_severidade = mean(severidade),
+    dp_severidade = sd(severidade)
+  ) |>
+  filter(software == "Assess") |>
+  ggplot(aes(x = crop, y = media_severidade, fill = crop)) +
+  geom_col() +
+  geom_point() +
+  geom_errorbar(
+    aes(
+      ymin = media_severidade - dp_severidade,
+      ymax = media_severidade + dp_severidade
+    ),
+    width = 0.1
+  ) +
+  theme_classic() +
+  theme(legend.position = "none")
+
+plot2
+```
+
+### 6.3 Versão mais robusta e clara da mesma análise
+
+Nesta segunda versão, o filtro é aplicado antes do agrupamento, o que deixa o fluxo mais direto. Além disso, foi incluído `na.rm = TRUE` para ignorar valores ausentes.
+
+```{r}
+plot2 <- dados_longo |>
+  # Filtra primeiro apenas o software de interesse
+  filter(software == "Assess") |>
+  
+  # Agrupa por cultura
+  group_by(crop) |>
+  
+  # Calcula estatísticas-resumo
+  summarise(
+    media_severidade = mean(severidade, na.rm = TRUE),
+    dp_severidade = sd(severidade, na.rm = TRUE)
+  ) |>
+  
+  # Constrói o gráfico com colunas e barras de erro
+  ggplot(aes(x = crop, y = media_severidade, fill = crop)) +
+  geom_col(alpha = 0.8) +
+  geom_errorbar(
+    aes(
+      ymin = media_severidade - dp_severidade,
+      ymax = media_severidade + dp_severidade
+    ),
+    width = 0.1
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  labs(
+    x = "Cultura",
+    y = "Severidade média (%)",
+    title = "Severidade por cultura - software Assess"
+  )
+
+plot2
+```
+
+## 7. Gráficos de relação entre variáveis
+
+Agora vamos comparar diretamente os valores produzidos por diferentes softwares. Esse tipo de gráfico é útil para avaliar concordância, associação linear e possíveis desvios entre métodos.
+
+### 7.1 Versão básica dos gráficos de dispersão
+
+```{r}
+# LeafDoctor versus Assess
+ld_as <- software |>
+  ggplot(aes(x = LeafDoctor, y = Assess)) +
+  geom_point(size = 2, color = "darkorange") +
+  ylim(0, 100) +
+  xlim(0, 100) +
+  geom_abline(intercept = 0, slope = 1, linetype = 2) +
+  geom_smooth(method = "lm", se = FALSE, color = "black")
+
+# ImageJ versus Assess
+ij_as <- software |>
+  ggplot(aes(x = ImageJ, y = Assess)) +
+  geom_point(size = 2, color = "darkorange") +
+  ylim(0, 100) +
+  xlim(0, 100) +
+  geom_abline(intercept = 0, slope = 1, linetype = 2) +
+  geom_smooth(method = "lm", se = FALSE, color = "black")
+
+# LeafDoctor versus ImageJ
+ij_ld <- software |>
+  ggplot(aes(x = LeafDoctor, y = ImageJ)) +
+  geom_point(size = 2, color = "darkorange") +
+  ylim(0, 100) +
+  xlim(0, 100) +
+  geom_abline(intercept = 0, slope = 1, linetype = 2) +
+  geom_smooth(method = "lm", se = FALSE, color = "black")
+
+# Exibe os três gráficos lado a lado
+ld_as + ij_as + ij_ld
+```
+
+Nesses gráficos:
+
+-   cada ponto representa uma observação;
+-   a linha tracejada de inclinação 1 indica concordância perfeita entre os métodos;
+-   a linha ajustada (`geom_smooth(method = "lm")`) mostra a tendência linear observada.
+
+### 7.2 Versão enriquecida com coeficiente de correlação
+
+Agora adicionamos o coeficiente de correlação de Pearson ao gráfico, usando `stat_cor()` do pacote `ggpubr`.
+
+```{r}
+# Carrega pacotes usados nesta etapa
+library(ggplot2)
+library(ggpubr)
+
+# Gráfico LeafDoctor vs Assess com correlação
+ld_as <- software |>
+  ggplot(aes(x = LeafDoctor, y = Assess)) +
+  geom_point(size = 2, color = "darkorange") +
+  geom_smooth(method = "lm", se = FALSE, color = "black") +
+  geom_abline(intercept = 0, slope = 1, linetype = 2) +
+  stat_cor(method = "pearson", label.x = 5, label.y = 95) +
+  ylim(0, 100) +
+  xlim(0, 100) +
+  theme_minimal()
+
+# Gráfico ImageJ vs Assess com correlação
+ij_as <- software |>
+  ggplot(aes(x = ImageJ, y = Assess)) +
+  geom_point(size = 2, color = "darkorange") +
+  geom_smooth(method = "lm", se = FALSE, color = "black") +
+  geom_abline(intercept = 0, slope = 1, linetype = 2) +
+  stat_cor(method = "pearson", label.x = 5, label.y = 95) +
+  ylim(0, 100) +
+  xlim(0, 100) +
+  theme_minimal()
+
+# Gráfico LeafDoctor vs ImageJ com correlação
+ij_ld <- software |>
+  ggplot(aes(x = LeafDoctor, y = ImageJ)) +
+  geom_point(size = 2, color = "darkorange") +
+  geom_smooth(method = "lm", se = FALSE, color = "black") +
+  geom_abline(intercept = 0, slope = 1, linetype = 2) +
+  stat_cor(method = "pearson", label.x = 5, label.y = 95) +
+  ylim(0, 100) +
+  xlim(0, 100) +
+  theme_minimal()
+
+# Exibe os gráficos em painel
+ld_as + ij_as + ij_ld
+```
+
+## 8. Observações finais sobre o fluxo de análise
+
+Este código ilustra um fluxo bastante comum em análise de dados:
+
+1.  importar dados de diferentes fontes;
+2.  inspecionar a estrutura dos objetos;
+3.  reorganizar a base para facilitar análise e visualização;
+4.  filtrar e selecionar subconjuntos de interesse;
+5.  resumir estatisticamente os dados;
+6.  construir gráficos exploratórios e comparativos.
+
+Em uma análise real, seria recomendável também:
+
+-   verificar valores ausentes;
+-   checar nomes e classes das variáveis;
+-   padronizar escalas e unidades;
+-   salvar objetos processados quando necessário;
+-   comentar o código de forma que ele possa ser entendido futuramente.

@@ -1,0 +1,9 @@
+location,cultivar,block,treatment,severity_pct,yield_kg_ha
+Vicosa,A,1,Control ,41.0,3220.0
+Vicosa,A,2,Fungicide,,3980.0
+Vicosa,B,1,Control ,34.0,3420.0
+Vicosa,B,2,Fungicide,14.0,4120.0
+Uberlandia,A,1,Control ,39.0,3340.0
+Uberlandia,A,2,Fungicide,18.0,
+Uberlandia,B,1,Control ,,3520.0
+Uberlandia,B,2,Fungicide,12.0,4190.0

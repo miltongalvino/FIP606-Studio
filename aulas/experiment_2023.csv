@@ -1,0 +1,9 @@
+Year,site,cult,rep,trt,sev,yield
+2023,Vicosa,A,1,ctrl,45,3150
+2023,Vicosa,A,2,fung,20,3900
+2023,Vicosa,B,1,ctrl,37,3350
+2023,Vicosa,B,2,fung,15,4050
+2023,Uberlândia,A,1,ctrl,40,3250
+2023,Uberlândia,A,2,fung,17,4000
+2023,Uberlândia,B,1,ctrl,33,3450
+2023,Uberlândia,B,2,fung,13,4150

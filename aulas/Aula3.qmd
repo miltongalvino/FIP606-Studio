@@ -1,0 +1,331 @@
+---
+title: "Aula 3: Manipulação e Integração de Diferentes Bases de Dados"
+author: "Milton Galvino"
+format: html
+editor: visual
+editor_options: 
+  chunk_output_type: console
+---
+
+## Arquivos com modos diferentes de escrever os dados
+
+Nesta seção, vamos carregar pacotes e ler diferentes conjuntos de dados (arquivos `.csv`). Utilizaremos a função `glimpse` para visualizar um resumo rápido de cada data frame importado. Além disso, veremos como renomear colunas (`rename`) e criar novas colunas baseadas em cálculos (`mutate`).
+
+```{r}
+library(tidyverse)
+
+# Importando arquivos .csv
+d22 <- read_csv("data/experiment_2022.csv")  
+d23 <- read_csv("data/experiment_2023.csv")
+d24 <- read_csv("data/experiment_2024.csv")
+
+# Resumo de cada dataframe
+glimpse(d22)     
+glimpse(d23)
+glimpse(d24)
+
+# Renomeando a coluna "yield" para "yld"
+d23a <- d23 |>              
+  rename(yld=yield)
+
+# Criando uma nova coluna com o logaritmo dos valores de "yield"
+d23a <- d23 |> 
+     mutate(yld=log(yield)) 
+```
+
+## Padronizar o nome das colunas
+
+Para podermos juntar planilhas de anos diferentes, elas precisam ter as mesmas colunas. O uso do `rename` nos permite padronizar os nomes. Também usaremos `select` para reordenar colunas e `rbind` para unir todos os dados em um único data frame chamado `d_all`.
+
+```{r}
+library(tidyverse)
+
+# Renomeando colunas (novo_nome = antigo_nome)
+d22a <- d22 |>                       
+  rename(
+    year  = year,
+    site  = location,
+    cult  = cultivar,
+    rep   = block,
+    trt   = treatment,
+    sev   = severity,
+    yld = yield_kg_ha)
+
+d23a <- d23 |> 
+  rename(year = Year,
+        yld = yield)
+
+d24a <- d24 |> 
+  mutate(Year = 2024) |> 
+  rename(year = Year,
+        site=location,
+        cult = cultivar,
+        rep= block,
+        trt = treatment,
+        sev=severity_pct,
+        yld=yield_kg_ha) |> 
+  select (year, 1:6) # Posicionando a coluna "year" na primeira posição
+        
+# Unindo os dataframes padronizados em um só
+d_all <- rbind(d22a, d23a, d24a)      
+```
+
+## Corrigir a escrita de determinados valores nas colunas
+
+Podemos utilizar a função `case_match` dentro do `mutate` para mapear e substituir valores específicos. O parâmetro `.default` garante que os valores não especificados permaneçam inalterados.
+
+```{r}
+d_alla <- d_all |>                      
+  mutate(trt = case_match(trt,   
+    "ctrl" ~ "Control",          
+    "fung" ~ "Fungicide",        
+    .default = trt                 
+  )) |> 
+  mutate(site = case_match (site,   
+     "Uberlandia" ~ "Uberlândia",   
+     "Vicosa" ~ "Viçosa",           
+     .default = site))              
+```
+
+## Adicionar colunas de latitude e longitude nos dados
+
+Para realizar análises geoespaciais e mapas, podemos criar um data frame com as coordenadas e uni-lo ao nosso conjunto principal utilizando a função `left_join`. Essa função liga as tabelas com base em valores de colunas correspondentes (neste caso, a cidade em `site`).
+
+```{r}
+site <- c("Viçosa", "Uberlândia")  
+lat <- c(-20.7544, -18.9186)
+long <- c(-42.8819, -48.2772)
+
+# Formando um data frame a partir de vetores
+coordenadas <- data.frame (site, lat, long) 
+
+# Agrupando as coordenadas ao dataframe original
+d_allc <- left_join(d_alla, coordenadas) 
+```
+
+## Montagem de gráficos baseados na base dados que foram modificadas
+
+O pacote `ggplot2` permite a criação de gráficos complexos camada por camada. A função `facet_wrap` e `facet_grid` ajudam a subdividir o gráfico em painéis baseados em diferentes variáveis categóricas (como `site` e `year`).
+
+```{r}
+# Gráficos de dispersão divididos por localidade
+d_allc |>           
+  ggplot(aes(trt, yld))+   
+  geom_jitter(width=0.1)+  
+  facet_wrap(~site)        
+  
+# Gráficos divididos por ano e localidade
+d_allc |>                   
+  ggplot(aes(trt, yld))+
+  geom_jitter(width=0.1)+
+  facet_wrap(year~site)   
+  
+# Gráfico matriz relacionando duas variáveis
+d_allc |> 
+  ggplot(aes(trt, yld))+
+  geom_jitter(width=0.1)+
+  facet_grid(year~site)+  
+  theme_light()
+  
+# Removendo o fator site caso não seja significativo
+d_allc |> 
+  ggplot(aes(trt, yld))+
+  geom_jitter(width=0.1)+
+  facet_grid(~year)+      
+  theme_light()
+```
+
+### Gráfico Boxplot Customizado
+
+Aqui nós mesclamos a geometria de boxplot (`geom_boxplot`) e a de dispersão espalhada (`geom_jitter`), permitindo analisar não só os quartis da amostra mas também a disposição individual de cada ponto. A função `annotate` permite adicionar um texto arbitrário sobre o gráfico, como o resultado de um teste de hipóteses.
+
+```{r}
+p1 <- d_allc |> 
+  ggplot(aes(trt, yld))+               
+  geom_boxplot(outlier.colour = NA)+   # Omitindo outliers já que usaremos jitter
+  geom_jitter(width=0.1)+              
+  theme_classic()+                     
+  ylim(3000,4500)+                     
+  labs(x="Treatment",                  
+       y= "Yield (kg/ha)")+
+  annotate(geom="text",                
+            x = 1, y= 4400,            
+            label = "t = -15          
+p < 0.001")                            
+
+p1
+
+ggsave("p1.png", width = 6, height = 4)  
+```
+
+### Teste T de Student para amostras independentes
+
+O Teste T avalia se há diferença estatística significativa entre as médias de dois grupos (neste caso, a produtividade `yld` em relação aos dois tratamentos `trt`). A Hipótese Nula ($H_0$) assume que não há diferença (as médias são iguais).
+
+O **p-valor (p-value)** representa a probabilidade de se observar os dados amostrais coletados caso a $H_0$ seja verdadeira. Na maioria dos estudos agronômicos, adota-se um nível de significância de 5% ($\alpha = 0.05$). Se o p-valor for $\le 0.05$, rejeitamos $H_0$ e concluímos que a diferença entre os tratamentos é estatisticamente significativa.
+
+```{r}
+library(rstatix)              
+
+# Teste estatístico
+t_test(d_allc, yld~trt)
+
+# Exemplo para teste pareado (dependente)
+d_allc |>  t_test(yld~trt, paired = TRUE) 
+    
+# Usando a função nativa do R para o teste T
+t.test(yld~trt, data = d_allc)           
+```
+
+### Gráficos Interativos
+
+Podemos utilizar a biblioteca `plotly` para converter um gráfico estático do `ggplot2` num gráfico interativo diretamente no visualizador do RStudio.
+
+```{r}
+library(plotly)
+
+# Criando um plot interativo
+ggplotly (p1)                           
+
+# Removendo a barra de opções do viewer
+p1_interativo_SB <- ggplotly(p1) |>     
+  config(displayModeBar=FALSE)          
+```
+
+## Adicionar os dados de tabela em mapas
+
+O pacote `sf` e `rnaturalearth` nos auxiliam a trabalhar com mapas geográficos e plotá-los diretamente usando a lógica do `ggplot2`. Neste exemplo, vamos cruzar dados de latitude e longitude do Excel sobre locais na Etiópia.
+
+```{r}
+library(readxl)
+
+cr <- read_xlsx("data/dados_diversos.xlsx", "coffee rust")             
+
+cr |>  
+  ggplot(aes(lon,lat))+     
+  geom_point()
+
+library(ggplot2)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+
+# Obtendo os contornos da Etiópia no formato "sf" para o ggplot2
+ethiopia_map <- ne_countries(scale = "medium",    
+                             country = "ethiopia",
+                             returnclass = "sf") 
+
+# Construindo o mapa com camadas
+ggplot() +
+  # Camada base: o mapa
+  geom_sf(data = ethiopia_map,     
+          fill = "antiquewhite",   
+          color = "darkgrey") +    
+  
+  # Camada de dados: as fazendas usando geom_point
+  geom_point(data = cr, aes(x = lon, y = lat), 
+             color = "brown",         
+             size = 2,                
+             alpha = 0.7) +           # Transparência ajuda com pontos sobrepostos
+  
+  # Estética e coord_sf (para garantir as proporções geográficas)
+  theme_minimal() +                                           
+  labs(title = "Localização das Fazendas de Café - Etiópia",  
+       subtitle = "Dados de Coffee Rust",                     
+       x = "Longitude",                                       
+       y = "Latitude") +                                      
+  coord_sf()           
+```
+
+# Montar mapa do Brasil
+
+## Baixar pacotes específicos do Github ou Repositórios externos
+
+Alguns pacotes podem não estar na rede principal do R (CRAN). Para baixar o nível de detalhamento dos estados do `rnaturalearth`, devemos instalá-lo através de repositórios específicos.
+
+```{r}
+#| eval: false
+#| include: True
+#install.packages("rnaturalearthhires", repos = "https://ropensci.r-universe.dev")
+```
+
+## Setar o data frame dos estados do Brasil
+
+Vamos configurar as coordenadas de latitude e longitude das capitais brasileiras, gerando um data frame do zero.
+
+```{r}
+coordenadasbrasil <- data.frame(
+  site = c(
+    "Aracaju", "Belém", "Belo Horizonte", "Boa Vista", "Brasília", 
+    "Campo Grande", "Cuiabá", "Curitiba", "Florianópolis", "Fortaleza", 
+    "Goiânia", "João Pessoa", "Macapá", "Maceió", "Manaus", 
+    "Natal", "Palmas", "Porto Alegre", "Porto Velho", "Recife", 
+    "Rio Branco", "Rio de Janeiro", "Salvador", "São Luís", "São Paulo", 
+    "Teresina", "Vitória"
+  ),
+  lat = c(
+    -10.91, -1.45, -19.92, 2.82, -15.78, 
+    -20.44, -15.59, -25.42, -27.59, -3.71, 
+    -16.67, -7.11, 0.03, -9.66, -3.10, 
+    -5.79, -10.21, -30.03, -8.76, -8.05, 
+    -9.97, -22.90, -12.97, -2.52, -23.54, 
+    -5.08, -20.31
+  ),
+  long = c(
+    -37.07, -48.50, -43.93, -60.67, -47.93, 
+    -54.64, -56.09, -49.27, -48.54, -38.54, 
+    -49.25, -34.86, -51.06, -35.73, -60.02, 
+    -35.20, -48.32, -51.23, -63.90, -34.88, 
+    -67.81, -43.20, -38.51, -44.30, -46.63, 
+    -42.80, -40.31
+  )
+)
+```
+
+## Fazer mapa do Brasil com anotações e escala
+
+Com os dados definidos, o procedimento para montar um mapa complexo se assemelha ao do mapa anterior. No entanto, vamos explorar a utilização de `geom_text_repel` para rotular de forma inteligente (sem sobreposição) e a `annotation_scale` com `annotation_north_arrow` para dar uma aparência totalmente profissional ao nosso mapa.
+
+```{r}
+library(ggplot2)
+library(readxl)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(ggthemes)
+library(ggrepel)
+library(ggspatial)
+
+# Obtendo geometria dos estados brasileiros
+br_map <- ne_states (country = "Brazil", 
+                     returnclass ="sf")
+
+br_map |> 
+  ggplot()+
+  geom_sf(fill = "antiquewhite", 
+          color = "darkgrey")+
+  geom_point(data= coordenadasbrasil, 
+             aes(long, lat), 
+             color="brown")+
+  theme_minimal()+
+  
+  # A função repel espalha os nomes das capitais automaticamente
+  geom_text_repel(data=coordenadasbrasil,     
+                  aes(long, lat,label = site),
+                  color="black",
+                  size=3)+
+                  
+  # Adicionando uma régua de escala no canto inferior esquerdo (bl)
+  annotation_scale( location = "bl",          
+                    width_hint = 0.5,         
+                    style = "bar")+           
+  
+  # Adicionando a Seta de Norte baseada no norte verdadeiro
+  annotation_north_arrow( location = "bl",        
+                          which_north = "true",   
+                          pad_x = unit(0.1, "in"), 
+                          pad_y = unit(0.3, "in"), 
+                          style = north_arrow_fancy_orienteering()) 
+
+```
+

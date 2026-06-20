@@ -1,0 +1,179 @@
+---
+title: "Aula7: Modelos Mistos e Parcelas Subdivididas (Split-Plot)"
+format: html
+editor: visual
+editor_options: 
+  chunk_output_type: console
+---
+
+## Introdução: Parcelas Subdivididas (Split-Plot)
+
+Nesta aula, trabalharemos com um delineamento em parcelas subdivididas (split-plot), comum quando temos dois fatores mas restrições de aleatorização no campo. O fator principal é aplicado à parcela inteira (main plot) e o fator secundário à subparcela (subplot).
+
+Primeiro, carregamos e inspecionamos os dados graficamente para entender a distribuição do índice/produtividade para cada híbrido sob diferentes métodos.
+
+```{r}
+library(readxl)
+library(tidyverse)
+library(ggplot2)
+
+milho <- read_excel("data/dados_diversos.xlsx","milho") 
+
+# Visão geral dividida por híbrido
+milho |>
+  ggplot(aes(hybrid, index, color=method))+
+  geom_jitter(width=0.1)+
+  facet_wrap(~hybrid)
+
+# Gráfico focado na dispersão com as variáveis lado a lado
+milho |>
+  ggplot(aes(hybrid, index, color = method))+
+  geom_point(position=position_dodge(width=0.5))+
+  theme(axis.text.x=element_text(angle = 90, vjust = 0.5, hjust=1))
+
+milho |>
+  ggplot(aes(hybrid, yield, color = method))+
+  geom_point(position=position_dodge(width=0.5))+
+  theme(axis.text.x=element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+### Abordagem 1: ANOVA Clássica com Termo de Erro
+
+Na abordagem clássica via `aov`, precisamos explicitar o erro da parcela principal, já que o modelo de parcelas subdivididas possui dois níveis de erro experimental.
+
+O termo `Error(block/hybrid)` define que `hybrid` está aninhado dentro de `block`, especificando corretamente o erro da parcela principal.
+
+```{r}
+modelo_split <- aov(index ~ block + hybrid * method + Error(block/hybrid), data = milho)
+
+summary(modelo_split)
+```
+
+### Abordagem 2: Modelos Mistos (lme4 e lmerTest)
+
+A abordagem moderna e recomendada para delinamentos complexos (como parcelas subdivididas ou medidas repetidas) é o uso de **Modelos Mistos**. O bloco e o erro da parcela principal são tratados como efeitos aleatórios.
+
+Testaremos as premissas de ambos os modelos e utilizaremos o modelo misto (`lmer`) para a inferência final.
+
+```{r}
+library(DHARMa)
+library(car)
+library(lme4)
+library(lmerTest)
+
+# Diagnóstico da abordagem aov
+# plot(simulateResiduals(modelo_split)) # ERRO: DHARMa não suporta objetos aovlist nativamente.
+# performance::check_normality(modelo_split)
+
+residuos <- residuals(modelo_split$Within)                     
+shapiro.test(residuos)
+
+# Teste de Homogeneidade de Variâncias (Levene)
+leveneTest(index~hybrid*method, data=milho)
+
+# Ajuste do Modelo Misto
+modelo_misto <- lmer(index ~ hybrid * method + (1|block) + (1|block:hybrid), data = milho)
+
+anova(modelo_misto)
+summary(modelo_misto)
+
+# Diagnóstico do Modelo Misto via DHARMa
+plot(simulateResiduals(modelo_misto))
+```
+
+### Médias Marginais e Teste de Comparações
+
+Extrairemos as médias do modelo misto avaliando a interação (desdobramento). O termo `method | hybrid` estuda as diferenças entre métodos dentro de cada híbrido.
+
+```{r}
+library(emmeans)
+library(multcomp)
+
+# Teste dentro de Híbrido e dentro de Método
+medias_misto <- emmeans(modelo_misto, ~ method | hybrid)
+medias_misto <- emmeans(modelo_misto, ~ hybrid | method)
+
+medias_misto
+cld(medias_misto, Letters= LETTERS)
+```
+
+## Resultados do Teste de Médias
+
+Quando a interação entre dois fatores (Híbrido x Método) é significativa, é praxe na literatura acadêmica construir uma tabela dupla ou um gráfico de barras contendo as letras maiúsculas e minúsculas correspondentes ao agrupamento do teste de médias.
+
+A tabela abaixo foi formatada dinamicamente utilizando `kableExtra`, que fornece uma estilização html profissional.
+
+```{r}
+library(knitr)
+library(kableExtra)
+
+# Criação manual do dataframe com base nas saídas do teste Tukey/emmeans
+dados <- data.frame(
+  Hibrido = c("30F53 HX", "30F53 YH", "30K64", "30S31H", "30S31YH", "BG7049H"),
+  Pin = c("25.3 ab A", "24.6 ab A", "20.6 a A", "38.1 b B", "32.5 ab A", "19.4 a A"),
+  Silk = c("25.0 a A", "26.2 a A", "21.5 a A", "26.5 a A", "26.7 a A", "19.2 a A")
+)
+
+# Renderização da tabela
+kable(dados, 
+      col.names = c("Híbrido", "Método: Pin", "Método: Silk"),
+      align = "lcc") |> 
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) |> 
+  footnote(general = "Letras minúsculas comparam híbridos (colunas) e maiúsculas comparam métodos (linhas).")
+```
+
+### Gráfico de Barras com Agrupamento Estatístico
+
+Outra forma elegante de apresentar a interação significativa é usando gráficos de barras emparelhados (`position_dodge`), preenchidos pelo método, contendo barras de erro baseadas no Erro Padrão (SE) e os rótulos de agrupamento (`geom_text`).
+
+```{r}
+#| label: fig-interacao
+#| fig-cap: "Desdobramento da interação entre híbridos e métodos. Barras de erro representam o erro padrão da média (SE = 3.56). Letras minúsculas comparam híbridos dentro de um mesmo método, e letras maiúsculas comparam métodos dentro de um mesmo híbrido."
+#| warning: false
+#| echo: false
+#| fig-width: 8
+#| fig-height: 5
+
+library(ggplot2)
+library(dplyr)
+
+# Banco de dados com as médias, SE e as letras de agrupamento
+dados_grafico <- data.frame(
+  hybrid = rep(c("30F53 HX", "30F53 YH", "30K64", "30S31H", "30S31YH", "BG7049H"), each = 2),
+  method = rep(c("Pin", "Silk"), times = 6),
+  emmean = c(25.3, 25.0,  
+             24.6, 26.2,  
+             20.6, 21.5,  
+             38.1, 26.5,  
+             32.5, 26.7,  
+             19.4, 19.2), 
+  SE = 3.56,
+  letras = c("ab A", "a A",   
+             "ab A", "a A",   
+             "a A",  "a A",   
+             "b B",  "a A",   
+             "ab A", "a A",   
+             "a A",  "a A")   
+)
+
+# Renderização final do plot
+ggplot(dados_grafico, aes(x = hybrid, y = emmean, fill = method)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8), width = 0.7, color = "black") +
+  geom_errorbar(aes(ymin = emmean - SE, ymax = emmean + SE), 
+                position = position_dodge(width = 0.8), width = 0.2) +
+  geom_text(aes(y = emmean + SE + 1.5, label = letras), 
+            position = position_dodge(width = 0.8), size = 3.5, fontface = "bold") +
+  scale_fill_manual(values = c("Pin" = "#E69F00", "Silk" = "#56B4E9")) +
+  labs(x = "Híbrido", 
+       y = "Média Estimada", 
+       fill = "Método") +
+  theme_classic() +
+  theme(
+    legend.position = "top",
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, face = "bold"),
+    axis.text.y = element_text(face = "bold"),
+    axis.title = element_text(face = "bold")
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15)))
+```
+

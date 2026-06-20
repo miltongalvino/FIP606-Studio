@@ -1,0 +1,146 @@
+---
+title: "Aula5: Modelagem de Dados Discretos (Contagens)"
+format: html
+editor: visual
+editor_options: 
+  chunk_output_type: console
+---
+
+## Modelagem de Dados Discretos (Contagens)
+
+Em dados de contagem (ex: número de insetos), frequentemente a premissa de normalidade não é atendida. Nesses casos, pode-se tentar a transformação de dados, utilizar testes não paramétricos, ou usar Modelos Lineares Generalizados (GLM) com distribuição de Poisson ou Binomial Negativa.
+
+Vamos iniciar nossa exploração carregando o conjunto de dados nativo do R chamado `InsectSprays`. Em seguida, faremos um gráfico de boxplot sobreposto com os pontos dispersos (`geom_jitter`) para entender a distribuição da contagem de insetos por tipo de spray aplicado.
+
+```{r}
+library(tidyverse)                              
+library(ggplot2)
+
+# Atribuir o dataframe nativo "InsectSprays" ao objeto "insetos"
+insetos <- InsectSprays                         
+
+insetos |>  
+  ggplot(aes(spray, count)) +      
+  geom_boxplot(outlier.colour = NA) +        
+  geom_jitter(width = 0.1)                  
+```
+
+### Ajuste de Modelo Linear Clássico (LM) e Verificação de Premissas
+
+Inicialmente, vamos tentar ajustar um modelo linear clássico (ANOVA de um fator via função `lm`). Após o ajuste do modelo (`m1`), é essencial checarmos as premissas de normalidade (via Shapiro-Wilk) e homocedasticidade (via Bartlett).
+
+> **Atenção:** Em modelos de ANOVA, a falta de variância homogênea (homocedasticidade) costuma ser um problema mais grave do que a falta de normalidade dos resíduos.
+
+O pacote `performance` oferece funções muito práticas para checar essas premissas rapidamente (`check_normality` e `check_heteroscedasticity`).
+
+```{r}
+m1 <- lm(count~spray, data = insetos)              
+
+summary(m1) 
+anova(m1)
+
+# Testes Clássicos de Premissas
+hist(m1$residuals)
+shapiro.test(m1$residuals)
+bartlett.test(count~spray, data=insetos)
+
+# Checagem via pacote performance
+library(performance)
+check_normality(m1)
+check_heteroscedasticity(m1)
+```
+
+### Teste de Kruskal-Wallis e Diagnóstico Visual (DHARMa)
+
+O Teste de Kruskal-Wallis é uma alternativa não paramétrica à ANOVA de um fator. É utilizado quando os dados não atendem aos pressupostos de normalidade ou homocedasticidade.
+
+Além disso, podemos usar o pacote `DHARMa` que simula resíduos para nos dar um diagnóstico visual super robusto sobre a adequação do nosso modelo.
+
+```{r}
+kruskal.test(count~spray, data=insetos)
+
+library(qqplotr)
+library(see)
+library(DHARMa)
+
+plot(simulateResiduals(m1))
+```
+
+## Alternativa 1: Transformação de Dados
+
+Quando a normalidade ou a homocedasticidade falham, uma das abordagens tradicionais é transformar a variável resposta. Para dados de contagem, a transformação por raiz quadrada (`sqrt()`) é comum. Vamos criar o modelo `m2` usando os dados transformados e realizar as verificações novamente.
+
+Após a modelagem, usamos o pacote `emmeans` para extrair as médias estimadas e o pacote `multcomp` para gerar as letras de agrupamento estatístico das médias (função `cld`). Note que é possível pedir as médias na escala original (transformada de volta) usando `type = "response"`.
+
+```{r}
+# Modelo linear com dados transformados (raiz quadrada)
+m2 <-  lm(sqrt(count)~spray, data=insetos)
+anova(m2)
+
+shapiro.test(m2$residuals)
+bartlett.test(sqrt(count)~spray, data=insetos)
+
+check_normality(m2)
+check_heteroscedasticity(m2)
+plot(simulateResiduals(m2))
+
+library(emmeans)
+library(multcomp)
+
+# Médias na escala transformada
+medias2 <- emmeans(m2, ~spray)
+medias2
+cld(medias2, Letters= letters)
+
+# Médias convertidas para a escala original de resposta
+medias3 <- emmeans(m2, ~spray, type = "response")
+medias3
+cld(medias3, Letters= letters)
+```
+
+## Alternativa 2: Modelos Lineares Generalizados (GLM)
+
+Os **GLMs** são uma abordagem mais moderna e robusta do que as transformações tradicionais de dados para lidar com a falta de normalidade.
+
+Para dados de contagem (discretos), a **distribuição de Poisson** ou **Binomial Negativa** são as mais indicadas. A função de ligação logarítmica (padrão para Poisson) garante que os valores preditos sejam estritamente positivos.
+
+Vamos ajustar o modelo `m4` com `glm` e `family=poisson`. Em seguida, compararemos visualmente os resíduos do modelo clássico (`m1`) com o modelo generalizado (`m4`) através do `DHARMa`.
+
+```{r}
+m4 <- glm(count~spray, 
+          family=poisson, 
+          data=insetos)
+m4
+anova(m4)
+
+# Comparação de Resíduos
+plot(simulateResiduals(m1))
+plot(simulateResiduals(m4))
+```
+
+### Gráfico Final de Médias do GLM
+
+Por fim, vamos extrair as médias estimadas do nosso GLM na escala de resposta e montar um gráfico de pontos elegante no `ggplot2`, adicionando barras que representam os limites inferior e superior do intervalo de confiança (LCL e UCL).
+
+```{r}
+library(agricolae)
+
+# Extraindo médias e agrupamentos
+df3 <- cld(emmeans(m4, ~spray, type = "response"), Letters=letters)
+
+# Gráfico
+df3 |> 
+  ggplot(aes(x=reorder(spray, -rate), y=rate, label=.group)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = asymp.LCL,
+                    ymax = asymp.UCL),
+                width=0.1) +
+  geom_text(aes(y = asymp.UCL),
+             vjust = -0.5,
+             size= 4) +
+  ylim(0, 25) + 
+  theme_classic() +
+  coord_flip() +
+  labs(x = "Spray Aplicado", y = "Taxa Estimada (Insetos)")
+```
+

@@ -1,0 +1,267 @@
+---
+title: "Aula6: Análise Fatorial, Blocos Casualizados e Correlação"
+format: html
+editor: visual
+editor_options: 
+  chunk_output_type: console
+---
+
+## Carregar o conjunto de dados
+
+Nesta seção inicial, vamos importar nossos dados sobre fungicidas em vasos.
+
+**Dica estatística:** Se o seu experimento tiver apenas 2 níveis de um fator quantitativo (ex: apenas duas doses diferentes), você pode tratá-lo como um fator qualitativo (categórico), pois não há um gradiente de quantidade suficiente para ajustar uma curva contínua.
+
+```{r}
+library(readxl)
+library(tidyverse)
+
+fungicidas <- read_excel("data/dados_diversos.xlsx", "fungicida_vaso")  
+
+fungicidas2 <- fungicidas |> 
+  mutate(incidencia = inf_seeds/n_seeds,
+         dose = factor(dose))
+```
+
+## Visualização de dados de Interação
+
+Antes de modelar, sempre exploramos os dados visualmente. Aqui usamos `facet_wrap` para dividir os gráficos pela dose e `interaction.plot` para inspecionar graficamente se as linhas de tendência se cruzam ou não, o que indica uma possível interação entre o fungicida e a dose.
+
+```{r}
+library(ggplot2)
+
+fungicidas2 |> 
+  mutate(dose = factor(dose)) |> 
+  ggplot(aes(treat, severity, color = dose))+
+  geom_jitter(width=0.1)+
+  facet_wrap(~dose)+
+  theme(legend.position = "none")
+  
+interaction.plot(fungicidas$treat,
+                 fungicidas2$dose, fungicidas$severity)
+```
+
+## Modelagem Simples vs. Modelagem Fatorial
+
+Podemos testar o efeito de cada fator isoladamente (modelos `m1` e `m2`), mas em um experimento fatorial o ideal é testar a interação entre eles (`m3`).
+
+```{r}
+# Modelo apenas para o tratamento (fungicida)
+m1 <- lm(severity ~ treat, data = fungicidas2)
+anova(m1)
+
+# Modelo apenas para a dose
+m2 <- lm(severity ~ dose, data = fungicidas2)
+anova(m2)
+
+# Modelo Fatorial (Tratamento x Dose)
+m3 <- lm(severity ~ treat*dose, data = fungicidas2)
+```
+
+### Análise de Variância (ANOVA) Fatorial
+
+Na criação do modelo `m3`, a expressão `treat*dose` informa ao modelo linear para analisar não só o efeito principal do tratamento e o efeito principal da dose, mas também a **interação** entre eles (`treat:dose`). A interação nos diz se o efeito do tratamento (fungicida) depende da dose aplicada, sendo fundamental verificar sua significância no quadro da ANOVA.
+
+```{r}
+anova(m3)
+```
+
+### Diagnóstico de Resíduos (DHARMa)
+
+O pacote DHARMa é usado para avaliar a qualidade do modelo simulando os resíduos e checando problemas de distribuição, dispersão e outliers.
+
+```{r}
+library(DHARMa)
+plot(simulateResiduals(m3))
+```
+
+### Médias Marginais Estimadas e Comparações
+
+Vamos estimar as médias considerando a interação (`treat|dose`), que calcula a média do tratamento dentro de cada nível de dose. Depois, aplicamos o teste de comparações múltiplas para obter as letras indicativas de diferença estatística.
+
+```{r}
+library(emmeans)
+library(multcomp)
+
+medias_m3 <- emmeans (m3, ~ treat|dose)
+medias_m3
+
+medias2_m3 <- emmeans (m3, ~ treat|dose)
+medias2_m3
+
+cld(medias_m3, Letters=letters)
+cld(medias2_m3, Letters=letters)
+```
+
+### Representação em Tabelas e Gráficos
+
+Se a interação for significativa, montamos uma tabela de dupla entrada, comparando as colunas e as linhas (geralmente com letras maiúsculas e minúsculas). Se a interação **não** for significativa, o ideal é fazer gráficos de barra isolados para o efeito principal do fungicida e outro para a dose.
+
+Exemplo de tabela de interação:
+
+::: {#tbl-anova}
+| Tratamento       |    Dose 0.5    |    Dose 2.0    |
+|:-----------------|:--------------:|:--------------:|
+| **Ionic liquid** | 0.29 ± 0.03 aA | 0.05 ± 0.03 aB |
+| **Tebuconazole** | 0.02 ± 0.03 bA | 0.02 ± 0.03 aA |
+
+Tabela 1: Médias estimadas e comparação de grupos. Médias seguidas de erro padrão (± SE). Letras minúsculas comparam tratamentos dentro de cada dose (coluna) e letras maiúsculas comparam doses dentro de cada tratamento (linha). Médias com a mesma letra não diferem entre si pelo teste de Tukey (p \> 0,05).
+:::
+
+## Produtividade no Campo
+
+Vamos importar agora um conjunto de dados medidos a campo, que sofre influência da heterogeneidade natural do ambiente.
+
+```{r}
+library(readxl)
+campo <- read_excel("data/dados_diversos.xlsx", 'fungicida_campo')
+
+campo2 <- campo |> 
+  mutate(trat=factor(TRAT),
+         bloco= factor(BLOCO)) |> 
+  dplyr::select(trat, bloco, PROD) |> 
+  rename (prod=PROD)
+
+library(ggplot2)
+campo2 |>  ggplot(aes(trat, prod))+
+  geom_point(alpha=0.5)+
+  ylim(1500,6000)+
+  stat_summary()+
+  theme_classic()+
+  labs(x="Tratamento fungicida",
+       y= "produtividade (kg/ha)")
+```
+
+## Modelo de ANOVA em Blocos Casualizados (DBC)
+
+O **Delineamento em Blocos Casualizados (DBC)** é utilizado quando há heterogeneidade conhecida na área experimental (por exemplo, um gradiente de fertilidade, sombreamento ou umidade no campo). O fator `bloco` é introduzido no modelo para isolar essa variação e reduzir o erro experimental ("ruído" dos dados), aumentando a precisão na comparação dos tratamentos.
+
+```{r}
+m_bloco <- lm(prod ~ trat + bloco, data= campo2)
+m_bloco
+
+library(DHARMa)
+plot(simulateResiduals(m_bloco))
+
+anova_m_bloco <- anova(m_bloco)
+anova_m_bloco
+
+library(emmeans)
+medias_m_bloco <- emmeans(m_bloco, ~trat)
+medias_m_bloco
+
+cld(medias_m_bloco, Letters = LETTERS)
+```
+
+### Gráfico com Médias e Intervalo de Confiança
+
+Abaixo, extraímos o resultado das letras (`cld`) e criamos um gráfico que sobrepõe os dados brutos (`geom_jitter`), as barras de intervalo de confiança (`geom_errorbar`), as médias estimadas pelo modelo (`geom_point`) e finalmente as letras de significância (`geom_text`). Removemos espaços em branco gerados pelo `cld` usando a função `trimws`.
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(multcompView) 
+
+letras <- cld(medias_m_bloco, Letters = LETTERS)
+letras$.group <- trimws(letras$.group) 
+
+ggplot() +
+  geom_jitter(data = campo2, 
+              aes(x = as.factor(trat), y = prod), 
+              width = 0.1, alpha = 0.4, color = "gray50") +
+  
+  geom_errorbar(data = letras, 
+                aes(x = as.factor(trat), ymin = lower.CL, ymax = upper.CL), 
+                width = 0.2, linewidth = 0.8, color = "black") +
+  
+  geom_point(data = letras, 
+             aes(x = as.factor(trat), y = emmean), 
+             size = 3, color = "darkred") +
+  
+  geom_text(data = letras, 
+            aes(x = as.factor(trat), y = upper.CL + 150, label = .group), 
+            fontface = "bold", size = 4.5, color = "black") +
+  
+  ylim(1500, 6000) +
+  theme_classic() +
+  labs(x = "Tratamento fungicida",
+       y = "Produtividade")
+```
+
+## Correlação entre Incidência e Mofo Branco
+
+Nesta seção, exploraremos a associação linear entre variáveis como Incidência (`inc`), Produtividade (`yld`) e Peso de Escleródios (`scl`). O pacote `ggpubr` nos permite incluir automaticamente a estatística de correlação direto no gráfico através do `stat_cor`.
+
+```{r}
+mofo <- read_excel("data/dados_diversos.xlsx", "mofo")
+
+library(ggpubr)
+
+# Visualização de Incidência vs Produtividade (Yield)
+mofo |> 
+  ggplot(aes(inc, yld))+
+  geom_point(width=0.1)+
+  geom_smooth(method= "lm", se=F)+
+  stat_cor(method = "pearson", label.x = 3, label.y = 30)+
+  facet_wrap(~study)
+
+# Visualização de Incidência vs Peso de Escleródios
+mofo |> 
+  ggplot(aes(inc, scl))+
+  geom_point(width=0.1)+
+  geom_smooth(method= "lm", se=F)+
+  stat_cor(method = "pearson", label.x = 3, label.y = 30)+
+  facet_wrap(~study)
+```
+
+### Gráfico Unificado com Herança de Estética
+
+Podemos unificar diferentes estudos no mesmo painel gráfico mapeando a cor para o fator `study`. O detalhe interessante do pacote `ggplot2` em conjunto com `ggpubr` é que a função `stat_cor` herda essa subdivisão de cor e calcula a correlação independentemente para cada grupo sem que precisemos configurar do zero.
+
+```{r}
+library(ggplot2)
+library(ggpubr)
+
+mofo |> 
+  ggplot(aes(inc, scl, color = factor(study))) +
+  geom_jitter(width = 0.1, alpha = 0.7) + 
+  geom_smooth(method = "lm", se = FALSE) +
+  stat_cor(method = "pearson", 
+           label.x = 0, 
+           show.legend = FALSE) +
+  labs(x = "Incidência da doença",
+       y = "Peso dos escleródios (g)", 
+       color = "Estudo",
+       title = "Correlação entre Incidência e Peso de Escleródios") +
+  theme_minimal()
+```
+
+### Coeficiente de Correlação de Pearson
+
+O **Coeficiente de Correlação de Pearson** mede a força e a direção da relação linear entre duas variáveis quantitativas contínuas. \* **Variação**: Varia de -1 (correlação negativa perfeita) a 1 (correlação positiva perfeita). \* **Significância**: O p-valor associado ao teste avalia se a correlação observada na amostra é significativamente diferente de zero.
+
+```{r}
+# Correlação de todos os estudos agrupados (cuidado: pode ignorar o efeito do local)
+cor.test(mofo$inc, mofo$yld, method="pearson")    
+
+# Apenas calcula o valor (r), sem fornecer p-valor ou intervalo de confiança
+cor(mofo$inc, mofo$yld, method="pearson")         
+
+# Abordagem correta: calcular a correlação separadamente por estudo
+mofo2 <- mofo |> group_by(study) |> 
+  summarise(correlacao= cor (inc,yld), method="pearson")
+
+summary(mofo2)
+```
+
+### Histograma e Distribuição de Frequências
+
+Por último, avaliamos o formato da distribuição univariada. O peso de escleródios (`scl`) muitas vezes sofre assimetria e pode precisar de transformação logarítmica.
+
+```{r}
+hist(mofo$yld)
+hist(mofo$inc)
+hist(mofo$scl)
+hist(log(mofo$scl))
+```
+

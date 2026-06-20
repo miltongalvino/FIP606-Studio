@@ -1,0 +1,235 @@
+---
+title: "Aula8: Modelos de Regressão, Diagnóstico e Modelos Mistos"
+format: html
+editor: visual
+editor_options: 
+  chunk_output_type: console
+---
+
+## Introdução à Regressão Linear Simples
+
+A Regressão Linear Simples é uma técnica estatística usada para modelar a relação entre uma variável dependente contínua ($Y$) e uma variável independente contínua ($X$). O objetivo é encontrar a reta de melhor ajuste que minimize a soma dos erros quadráticos (diferença entre os valores observados e preditos).
+
+A equação do modelo é dada por: $Y = \beta_0 + \beta_1X + \epsilon$
+
+Onde: - $\beta_0$: Intercepto (valor de $Y$ quando $X = 0$) - $\beta_1$: Coeficiente angular ou inclinação (variação em $Y$ para cada unidade de aumento em $X$) - $\epsilon$: Erro aleatório (resíduo)
+
+```{r}
+#| message: false
+#| warning: false
+
+# Carregando pacotes necessários
+library(ggplot2)
+library(tidyverse)
+
+# Criando um conjunto de dados simulado
+x <- seq(0, 150, by = 25) # Variável independente (ex: Dose de Nitrogênio)
+y <- c(8.6, 8.9, 9.5, 9.9, 10, 10.2, 10.5) # Variável dependente (ex: Rendimento de grãos)
+df <- data.frame(x = x, y = y)
+
+# Visualizando os dados com a reta de regressão
+df |> ggplot(aes(x, y)) +
+  geom_point() + # Adiciona os pontos (dados observados)
+  geom_smooth(se = FALSE, method = "lm") + # Adiciona a reta de regressão linear
+  labs(x = "Dose de N (kg/ha)",
+       y = "Rendimento de grãos (t/ha)",
+       title = "Regressão Linear Simples")
+
+# Ajustando o modelo de regressão linear
+m1 <- lm(y ~ x, data = df)
+
+# Exemplo de predição manual para x = 70
+x_novo = 70
+y_predito_manual = m1$coefficients[1] + m1$coefficients[2] * x_novo
+y_predito_manual
+
+# Resumo estatístico do modelo
+summary(m1)
+
+# Calculando valores preditos e resíduos (erros) para todos os pontos
+pred <- df |> 
+  mutate(predito = predict(m1),       # Valores de y estimados pelo modelo
+         residual = y - predito)      # Diferença entre y observado e predito
+
+pred
+
+summary(m1)
+
+# Correlação de Pearson (medida de associação linear entre x e y)
+z <- cor(df$x, df$y)
+
+# Coeficiente de Determinação (R²)
+# Indica a proporção da variância de Y que é explicada por X
+z * z
+```
+
+### Importando e modelando dados reais
+
+```{r}
+#| message: false
+#| warning: false
+
+library(rio)
+
+# Importando dados da web
+url <- "https://bit.ly/df_biostat"
+df_reg <- import(url, sheet = "REG_DEL_DATA", setclass = "tbl")
+
+# Ajustando modelo linear simples
+m2 <- lm(RG ~ DOSEN, data = df_reg)
+
+# Análise de Variância (ANOVA) para o modelo
+anova(m2)
+
+# Resumo do modelo
+summary(m2)
+summary(m1)
+
+# Visualizando dados com anotação da equação da reta
+df_reg |> 
+  ggplot(aes(DOSEN, RG)) +
+  geom_point() +
+  geom_smooth(se = FALSE, method = "lm") +
+  annotate(geom = "text",
+           x = 15,
+           y = 10.5,
+           label = "y = 84.3 + 0.0242 * DOSEN")
+```
+
+**Interpretando o Summary do Modelo:** Residual standard error: 0.1621 on 5 degrees of freedom. Multiple R-squared: 0.9546, Adjusted R-squared: 0.9456 F-statistic: 105.2 on 1 and 5 DF, p-value: 0.0001513
+
+O **Adjusted R-squared** (R² Ajustado) de 0.9456 indica que *94,56% da variação de y é explicada pela variável x*.
+
+------------------------------------------------------------------------
+
+## Regressão Polinomial (Quadrática)
+
+Quando a relação não é linear (ex: resposta a doses onde há um máximo ou mínimo), podemos usar um modelo polinomial, como a regressão quadrática.
+
+Equação: $Y = \beta_0 + \beta_1X + \beta_2X^2 + \epsilon$
+
+```{r}
+# Criando dados com comportamento curvo
+DOSEN <- c(0, 50, 100, 150, 200, 250)
+RG    <- c(7.1, 7.3, 7.66, 7.71, 7.62, 7.6)
+df2 <- data.frame(DOSEN = DOSEN, RG = RG)
+
+# Modelo de regressão quadrática
+# raw = TRUE informa para usar os dados brutos (x e x^2) ao invés de polinômios ortogonais
+mod2 <- lm(RG ~ poly(DOSEN, 2, raw = TRUE), data = df2)
+summary(mod2)
+
+# Comparação: Modelo Linear vs Quadrático
+m3 <- lm(RG ~ DOSEN, data = df2)
+summary(m3)
+
+m4 <- lm(RG ~ poly(DOSEN, 2, raw = TRUE), data = df2)
+summary(m4)
+
+# Encontrando o ponto de máximo da curva (derivada primeira igual a zero)
+b <- coef(m4)[2]  # Coeficiente linear
+a <- coef(m4)[3]  # Coeficiente quadrático
+
+dose_max = -b / (2 * a)
+dose_max
+
+# Visualização do ajuste quadrático e o ponto de dose máxima
+df2 |>  
+  ggplot(aes(DOSEN, RG)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE,
+              formula = y ~ poly(x, 2)) +
+  geom_vline(xintercept = dose_max, linetype = "dashed", color = "red") +
+  labs(title = "Regressão Polinomial", x = "Dose", y = "Resposta")
+```
+
+------------------------------------------------------------------------
+
+## Diagnóstico de Modelos e Modelos Lineares Generalizados (GLM)
+
+Em muitas situações agronômicas ou biológicas (como dados de contagem), as premissas da regressão clássica são violadas. Usamos transformações matemáticas (ex: raiz quadrada) ou Modelos Lineares Generalizados (GLM) e inspecionamos os resíduos para validação.
+
+```{r}
+#| message: false
+#| warning: false
+
+library(readxl)
+library(DHARMa)
+
+# Tentativa de carregar dados externos
+tryCatch({
+  estande <- read_excel("data/dados_diversos.xlsx", sheet = "estande")
+  
+  # Visualização exploratória geral
+  print(estande |> ggplot(aes(trat, nplants, group = exp)) +
+    geom_point(color = "gray") +
+    geom_abline(intercept = 69.74, slope = -0.56, linewidth = 3, color = "black") +
+    geom_smooth(se = FALSE, method = "lm", color = "gray") +
+    theme_classic() +
+    theme(legend.position = "bottom") +
+    labs(x = "Incidência de fungo na semente (%)",
+         y = "Estande (n. de plantas)"))
+
+  # Analisando Experimento 1: Comparando LM transformado vs GLM
+  exp1 <- estande |> filter(exp == 1)
+  
+  # Modelo Linear com variável dependente transformada
+  m1 <- lm(sqrt(nplants) ~ trat, data = exp1)
+  print(anova(m1))
+  print(summary(m1))
+  print(AIC(m1))
+  plot(simulateResiduals(m1)) # Diagnóstico de resíduos usando pacote DHARMa
+
+  # Modelo Linear Generalizado (GLM) - útil para não-normalidade e outras distribuições
+  m11 <- glm(sqrt(nplants) ~ trat, data = exp1)
+  print(anova(m11))
+  print(summary(m11))
+  print(AIC(m11))
+  plot(simulateResiduals(m11))
+
+  # Experimento 2
+  exp2 <- estande |> filter(exp == 2)
+  m2 <- lm(sqrt(nplants) ~ trat, data = exp2)
+  print(anova(m2))
+  plot(simulateResiduals(m2))
+
+  # Experimento 3
+  exp3 <- estande |> filter(exp == 3)
+  m3 <- lm(sqrt(nplants) ~ trat, data = exp3)
+  print(anova(m3))
+  plot(simulateResiduals(m3))
+}, error = function(e) print(e))
+```
+
+------------------------------------------------------------------------
+
+## Modelos Lineares Mistos
+
+Quando há estruturas de agrupamento ou medidas repetidas, utilizamos modelos mistos. Eles lidam simultaneamente com efeitos **fixos** (interesse principal, como tratamentos) e efeitos **aleatórios** (fontes de variação como blocos, anos ou locais).
+
+A notação `(1 | exp/bloco)` indica que há interceptos aleatórios para `experimento` e `bloco` aninhado dentro de `experimento`.
+
+```{r}
+#| message: false
+#| warning: false
+
+library(lme4)
+
+tryCatch({
+  # Ajustando o modelo misto
+  m_mix <- lmer(nplants ~ trat + (1 | exp/bloco), data = estande) 
+
+  # Resumo do modelo (Estimativas para efeitos fixos e variâncias para efeitos aleatórios)
+  print(summary(m_mix))
+  
+  # ANOVA usando pacote 'car'
+  print(car::Anova(m_mix))
+  
+  # Diagnóstico do modelo
+  plot(simulateResiduals(m_mix))
+  plot(m_mix)
+  
+  # Acessando coeficientes fixos
+  a <- coef(m_mix)$exp[1, 1]
+}, error = function(e) print(e))
+```

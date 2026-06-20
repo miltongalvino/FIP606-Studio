@@ -1,0 +1,228 @@
+---
+title: "Aula4: Análise de Progresso de Doença e Comparações"
+Author: Milton Galvino
+format: html
+editor: visual
+editor_options: 
+  chunk_output_type: console
+---
+
+## Importação e Cálculo de Área Abaixo da Curva de Progresso da Doença (AUDPC)
+
+O cálculo da AUDPC é amplamente utilizado em fitopatologia para quantificar a severidade da doença ao longo do tempo. Nesta seção, vamos calcular a AUDPC a partir de um conjunto de dados e criar gráficos relacionando a irrigação com a severidade.
+
+```{r}
+library (tidyverse)
+library (readxl)
+library(ggplot2)
+library (epifitter)
+
+# Ler os dados
+dados <- read_excel ("dados_diversos.xlsx", "curve")
+
+# Gráfico de Área da curva de progresso da doença
+dados |>
+  group_by (Irrigation, day) |> 
+  summarise (mean_sev = mean(severity*100),
+            sd_sev = sd(severity*100)) |> 
+  ggplot(aes(day, mean_sev, group = Irrigation, 
+             color = Irrigation))+
+  geom_area(alpha = 0.2, position = "identity")+
+  geom_point()+
+  geom_line()+
+  geom_errorbar(aes(ymin=mean_sev-sd_sev,
+                ymax=mean_sev+sd_sev), width= 0.1)+
+  labs(x= "Dias", y="Severidade (%)")+
+  theme_classic()
+```
+
+### Sumarização e Gráfico de Barras com Desvio Padrão
+
+Vamos utilizar as funções do pacote `dplyr` para calcular a AUDPC agrupada por parcela (Irrigação x Repetição) e, na sequência, obter a média e o desvio padrão de cada tratamento (Irrigação).
+
+```{r}
+dados_audpc_plot <- dados |> 
+  # 1. Calcula a estatística média e sd da AUDPC
+  group_by(Irrigation, rep) |> 
+  summarise(audpc = AUDPC (day, severity), .groups = "drop") |> 
+  group_by(Irrigation) |>  
+  summarise(mean_audpc = mean(audpc),
+            sd_audpc = sd(audpc), .groups = "drop") 
+
+# 2. Faz o plot
+dados_audpc_plot |> 
+  ggplot(aes(Irrigation, mean_audpc))+
+  geom_col(width=0.5)+
+  geom_point()+
+  geom_errorbar(aes(ymin= mean_audpc - sd_audpc,
+                    ymax = mean_audpc + sd_audpc),
+                width=0.1)+
+  ylim(0,20)+
+  labs (x="Irrigação", y= "Média da AUDPC")+
+  theme_classic()
+```
+
+### Gráfico de Barras com Intervalo de Confiança (IC)
+
+Para alterar as suas barras de erro de Desvio Padrão (SD) para Intervalo de Confiança (IC) (normalmente usamos o IC de 95%), precisamos fazer um pequeno cálculo adicional dentro do `summarise`.
+
+O Intervalo de Confiança é calculado usando o Erro Padrão (Desvio Padrão dividido pela raiz quadrada do número de repetições) multiplicado pelo valor $t$ da distribuição de Student (que nos dá os 95% de confiança).
+
+```{r}
+dados |> 
+  # 1. Calcula a AUDPC por parcela (Irrigação x Repetição)
+  group_by(Irrigation, rep) |> 
+  summarise(audpc = AUDPC(day, severity), .groups = "drop") |> 
+  
+  # 2. Calcula média, N, SD e o Intervalo de Confiança (95%)
+  group_by(Irrigation) |>  
+  summarise(
+    mean_audpc = mean(audpc),
+    sd_audpc = sd(audpc),
+    n_rep = n(),  
+    erro_ic = qt(0.975, df = n_rep - 1) * (sd_audpc / sqrt(n_rep)),
+    .groups = "drop"
+  ) |> 
+  
+  # 3. Faz o plot com as margens de erro
+  ggplot(aes(Irrigation, mean_audpc)) +
+  geom_col(width = 0.5, fill = "lightgray", color = "black") + 
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = mean_audpc - erro_ic,
+                    ymax = mean_audpc + erro_ic),
+                width = 0.1) +
+  ylim(0, 20) +
+  labs(x = "Irrigação", y = "Média da AUDPC (IC 95%)") +
+  theme_get()
+```
+
+### Teste T de Student
+
+Verificando estatisticamente a diferença da média de AUDPC entre dois tratamentos de irrigação.
+
+```{r}
+library(rstatix)
+
+dados_audpc <- dados |> 
+  group_by(Irrigation, rep) |> 
+  summarise(audpc=AUDPC(day, severity), .groups = "drop")
+  
+t.test(audpc ~ Irrigation, data = dados_audpc)
+```
+
+## Avaliação de Escalas e Acuidade Visual
+
+Aqui analisamos se os avaliadores têm diferenças significativas nas estimativas visuais de doença com ou sem auxílio de escalas (Unaided vs Aided1).
+
+```{r}
+escala <-read_excel("data/dados_diversos.xlsx", "escala")
+head(escala)
+
+escala |> ggplot(aes(assessment,acuracia))+
+  geom_boxplot(outlier.color = NA)+
+  geom_jitter(width = 0.1)+
+  ylim(0,1)
+
+escala_wide<- escala |> 
+  select(rater, assessment, acuracia) |> 
+  pivot_wider(
+    names_from= assessment,
+    values_from= acuracia
+  )
+
+t.test(escala_wide$Unaided,
+       escala_wide$Aided1,
+       paired=TRUE)
+```
+
+### Teste de Normalidade de Shapiro-Wilk
+
+A Hipótese Nula ($H_0$) do teste de Shapiro-Wilk assume que os dados seguem uma distribuição normal. Se o p-valor for menor que 0.05, rejeitamos $H_0$, concluindo que os dados não apresentam distribuição normal. Gráficos Q-Q também são auxiliares visuais úteis.
+
+```{r}
+qqnorm(escala_wide$Unaided)
+qqline(escala_wide$Unaided)
+shapiro.test(escala_wide$Unaided)
+
+qqnorm(escala_wide$Aided1)
+qqline(escala_wide$Aided1)
+shapiro.test(escala_wide$Aided1)
+```
+
+### Teste de Wilcoxon (Mann-Whitney U) e Premissas Paramétricas
+
+O **Teste de Wilcoxon** é o equivalente não paramétrico ao Teste T pareado. É utilizado quando a premissa de normalidade dos dados não é atendida. O teste baseia-se em postos (ranks) em vez dos valores absolutos.
+
+Vale lembrar as premissas para uso do Teste T paramétrico: 1. **Normalidade**: se violada severamente, deve-se usar testes não paramétricos. 2. **Homocedasticidade**: se as variâncias não forem homogêneas, usamos a correção de Welch. Se a normalidade não for atingida, a abordagem não paramétrica prevalece.
+
+```{r}
+wilcox.test(escala_wide$Aided1,
+       escala_wide$Unaided,
+       paired=TRUE)
+```
+
+## Análise de Variância (ANOVA) de Fatores Únicos (One-Way ANOVA)
+
+Vamos analisar o crescimento micelial in vitro de diferentes isolados (espécies). A ANOVA nos dirá se existe pelo menos um isolado diferindo dos demais. Utilizamos `coord_flip` para inverter os eixos facilitando a leitura de nomes longos.
+
+```{r}
+micelial <- read_excel("data/dados_diversos.xlsx", "micelial")
+count(micelial, especie)
+
+set.seed(2)
+micelial |> ggplot(aes(reorder(especie,tcm),tcm))+
+  geom_boxplot(outlier.color = NA)+
+  geom_jitter(width=0.2)+
+  coord_flip()   
+
+# Função aov e lm produzem análises idênticas para ANOVA
+m1 <- aov(tcm~ especie, data= micelial)
+anova(m1)
+
+m2 <- lm(tcm~ especie, data= micelial)
+anova(m2)
+```
+
+### Premissas do modelo de ANOVA
+
+Para confiarmos nos resultados da ANOVA, os resíduos do modelo precisam atender a duas premissas principais: 1. **Normalidade dos resíduos**: Avaliada pelo Teste de Shapiro-Wilk. 2. **Homocedasticidade ou homogeneidade de variâncias**: Avaliada pelo Teste de Bartlett, onde $H_0$ determina que as variâncias dos grupos são estatisticamente iguais.
+
+```{r}
+hist(m2$residuals)
+qqnorm(m2$residuals)
+qqline(m2$residuals)
+shapiro.test(m2$residuals)
+
+bartlett.test(tcm~especie, data=micelial)
+```
+
+### Teste de Comparações Múltiplas de Médias
+
+Se a ANOVA apontar significância, fazemos o teste de separação de médias (e.g., Tukey) para criar grupos (letras indicativas). O pacote `emmeans` avalia as médias estimadas, e `cld` atribui letras de significância. O pacote `multcomp` auxilia na plotagem elegante destas diferenças estatísticas.
+
+```{r}
+# install.packages("emmeans")
+# install.packages("multcomp")
+library(emmeans)
+library(multcomp)
+
+medias_m2 <- emmeans(m2, ~especie)
+medias_m2
+
+medias_m2b <- cld(medias_m2, Letters=letters)
+
+library(tidyverse)
+library(ggplot2)
+
+medias_m2b |> 
+  ggplot(aes(reorder(especie, emmean), emmean, label=.group))+
+  geom_point()+
+  geom_errorbar(aes(ymax = upper.CL,
+                    ymin = lower.CL),
+                width=0.1)+
+  ylim(0,2)+
+  coord_flip()+
+  labs(x="Isolado", y= "Taxa de crescimento micelial (mm/dia)")+
+  geom_text(hjust=0, nudge_y= 0.12, size=4)
+```
+
