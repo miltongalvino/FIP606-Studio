@@ -1,0 +1,9 @@
+year,location,cultivar,block,treatment,severity,yield_kg_ha
+2022,Vicosa,A,1,Control,42,3200
+2022,Vicosa,A,2,Fungicide,18,3950
+2022,Vicosa,B,1,Control,36,3400
+2022,Vicosa,B,2,Fungicide,14,4100
+2022,Uberlandia,A,1,Control,38,3300
+2022,Uberlandia,A,2,Fungicide,16,4050
+2022,Uberlandia,B,1,Control,31,3500
+2022,Uberlandia,B,2,Fungicide,12,4200
